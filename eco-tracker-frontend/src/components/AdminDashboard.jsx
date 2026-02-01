@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   FileCheck,
@@ -11,12 +11,17 @@ import {
   Leaf,
   Send,
 } from "lucide-react";
-import { authAPI } from "../services/api";
+import { authAPI, eventAPI, notificationAPI } from "../services/api";
 
 function AdminDashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("verify-logs");
-  const [username] = useState("Admin");
+  
+  const userString = localStorage.getItem("user");
+  const user = userString ? JSON.parse(userString) : null;
+  const [username] = useState(user?.name || 'Admin User'); 
+  const [email] = useState(user?.email || 'admin@ecoclub.edu');
+
 
   const [recyclingLogs] = useState([
     {
@@ -83,32 +88,50 @@ function AdminDashboard() {
     },
   ]);
 
-  const [events] = useState([
-    {
-      id: 1,
-      title: "Beach Cleanup Drive",
-      date: "Feb 5, 2026",
-      organizer: "Diana Lee",
-      participants: 45,
-      status: "Upcoming",
-    },
-    {
-      id: 2,
-      title: "Tree Planting Event",
-      date: "Feb 12, 2026",
-      organizer: "Eric Tan",
-      participants: 62,
-      status: "Upcoming",
-    },
-    {
-      id: 3,
-      title: "Recycling Workshop",
-      date: "Jan 20, 2026",
-      organizer: "Diana Lee",
-      participants: 38,
-      status: "Completed",
-    },
-  ]);
+  const [events, setEvents] = useState([]);
+  const [loadingEvents, setLoadingEvents] = useState(true);
+  const [eventsError, setEventsError] = useState(null);
+
+  // Fetch events on component mount
+  useEffect(() => {
+    if (activeTab === 'manage-events') {
+      fetchEvents();
+    }
+  }, [activeTab]);
+
+  const fetchEvents = async () => {
+    try {
+      setLoadingEvents(true);
+      const data = await eventAPI.getAllEvents();
+      setEvents(data.events || []);
+      setEventsError(null);
+    } catch (err) {
+      setEventsError(err.message);
+      console.error('Error fetching events:', err);
+    } finally {
+      setLoadingEvents(false);
+    }
+  };
+
+  const handleApproveEvent = async (eventId) => {
+    try {
+      await eventAPI.adminAction(eventId, 'approve');
+      alert('Event approved successfully!');
+      fetchEvents(); // Refresh events list
+    } catch (err) {
+      alert(`Error approving event: ${err.message}`);
+    }
+  };
+
+  const handleCancelEvent = async (eventId) => {
+    try {
+      await eventAPI.adminAction(eventId, 'cancel');
+      alert('Event cancelled successfully!');
+      fetchEvents(); // Refresh events list
+    } catch (err) {
+      alert(`Error cancelling event: ${err.message}`);
+    }
+  };
 
   const [announcement, setAnnouncement] = useState({
     title: "",
@@ -121,9 +144,23 @@ function AdminDashboard() {
     setAnnouncement((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSendAnnouncement = () => {
-    alert(`Announcement "${announcement.title}" sent to all users!`);
-    setAnnouncement({ title: "", message: "", priority: "normal" });
+  const handleSendAnnouncement = async () => {
+    if (!announcement.title || !announcement.message) {
+      alert('Please enter both title and message.');
+      return;
+    }
+
+    try {
+      const data = await notificationAPI.sendToAllUsers({
+        title: announcement.title,
+        message: announcement.message,
+        type: 'admin'
+      });
+      alert(`Announcement sent to ${data.recipientCount} user(s)!`);
+      setAnnouncement({ title: "", message: "", priority: "normal" });
+    } catch (err) {
+      alert(`Error sending announcement: ${err.message}`);
+    }
   };
 
   const handleVerifyLog = (logId) => {
@@ -165,13 +202,16 @@ function AdminDashboard() {
               </h1>
             </div>
             <div className="flex items-center space-x-4">
-              <button onClick={handleLogout}>
-                <span className="text-gray-700 font-medium">{"Logout"}</span>
-              </button>
-              <span className="text-gray-700 font-medium">{username}</span>
+              
+              <span className="text-gray-700 font-medium">{user?.name}</span>
               <div className="w-10 h-10 bg-red-600 rounded-full flex items-center justify-center">
                 <User className="w-6 h-6 text-white" />
               </div>
+
+              <button onClick={handleLogout}>
+                <span className="text-gray-700 font-medium">{"Logout"}</span>
+              </button>
+              
             </div>
           </div>
         </div>
@@ -597,53 +637,99 @@ function AdminDashboard() {
                 Oversee and approve all campus events
               </p>
             </div>
-            <div className="p-6 space-y-4">
-              {events.map((event) => (
-                <div
-                  key={event.id}
-                  className="border rounded-lg p-6 hover:shadow-md transition"
-                >
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <h4 className="text-lg font-bold text-gray-800">
-                        {event.title}
-                      </h4>
-                      <p className="text-sm text-gray-600 mt-1">
-                        Organized by: {event.organizer} • {event.date}
-                      </p>
-                    </div>
-                    <span
-                      className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                        event.status === "Completed"
-                          ? "bg-gray-100 text-gray-700"
-                          : "bg-green-100 text-green-700"
-                      }`}
-                    >
-                      {event.status}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-4 mb-4">
-                    <div className="flex items-center gap-2">
-                      <Users className="w-4 h-4 text-gray-600" />
-                      <span className="text-sm text-gray-700">
-                        {event.participants} participants
+            {loadingEvents ? (
+              <div className="p-8 text-center">
+                <p className="text-gray-600">Loading events...</p>
+              </div>
+            ) : eventsError ? (
+              <div className="p-8 text-center">
+                <p className="text-red-600">Error: {eventsError}</p>
+              </div>
+            ) : events.length === 0 ? (
+              <div className="p-8 text-center">
+                <p className="text-gray-600">No events found.</p>
+              </div>
+            ) : (
+              <div className="p-6 space-y-4">
+                {events.map((event) => (
+                  <div
+                    key={event.id}
+                    className="border rounded-lg p-6 hover:shadow-md transition"
+                  >
+                    <div className="flex justify-between items-start mb-4">
+                      <div>
+                        <h4 className="text-lg font-bold text-gray-800">
+                          {event.title}
+                        </h4>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Organized by: {event.organizer_name} • {new Date(event.event_date).toLocaleDateString()}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          Location: {event.location || 'N/A'} • Type: {event.event_type}
+                        </p>
+                      </div>
+                      <span
+                        className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                          event.status === "completed"
+                            ? "bg-gray-100 text-gray-700"
+                            : event.status === "pending"
+                            ? "bg-yellow-100 text-yellow-700"
+                            : event.status === "cancelled"
+                            ? "bg-red-100 text-red-700"
+                            : event.status === "ongoing"
+                            ? "bg-blue-100 text-blue-700"
+                            : "bg-green-100 text-green-700"
+                        }`}
+                      >
+                        {event.status.charAt(0).toUpperCase() + event.status.slice(1)}
                       </span>
                     </div>
+                    <div className="flex items-center gap-4 mb-4">
+                      <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 text-gray-600" />
+                        <span className="text-sm text-gray-700">
+                          {event.participant_count || 0} participants
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-700">
+                          Points: {event.eco_points_reward}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => navigate(`/event-detail`, { state: { event } })}
+                        className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition"
+                      >
+                        View Details
+                      </button>
+                      {event.status === 'pending' && (
+                        <>
+                          <button 
+                            onClick={() => handleApproveEvent(event.id)}
+                            className="px-4 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition"
+                          >
+                            Approve
+                          </button>
+                          <button 
+                            onClick={() => handleCancelEvent(event.id)}
+                            className="px-4 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition"
+                          >
+                            Cancel Event
+                          </button>
+                        </>
+                      )}
+                      {event.status !== 'pending' && event.status !== 'cancelled' && event.status !== 'completed' && (
+                        <span className="px-4 py-2 text-sm text-gray-500 italic">
+                          Already {event.status}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <button className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition">
-                      View Details
-                    </button>
-                    <button className="px-4 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition">
-                      Approve
-                    </button>
-                    <button className="px-4 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition">
-                      Cancel Event
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

@@ -5,6 +5,8 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
+import eventRoutes from './routes/events.js';
+import notificationRoutes from './routes/notification.js';
 
 dotenv.config();
 
@@ -35,6 +37,8 @@ app.use((req, res, next) => {
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/events', eventRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

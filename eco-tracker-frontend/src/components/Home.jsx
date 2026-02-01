@@ -68,7 +68,7 @@ function Home() {
                 href="#"
                 className="text-green-600 font-semibold hover:text-green-800 transition"
               >
-                Main Page
+                Main 
               </a>
               <button
                 onClick={() => navigate("/events")}
@@ -193,14 +193,8 @@ function Home() {
               </button>
             </div>
           )}
-          <div>
-            <button
-              onClick={() => navigate("/")}
-              className="text-gray-600 hover:text-gray-800 text-sm font-medium"
-            >
-              Back to Welcome
-            </button>
-          </div>
+
+          
         </div>
       </main>
     </div>

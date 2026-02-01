@@ -1,11 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Calendar, Trophy, Award, Bell, User, Leaf } from "lucide-react";
+import { notificationAPI } from "../services/api";
 
 function UserDashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('events');
-  const [username] = useState('Sweeney');
+  const userString = localStorage.getItem("user");
+  const user = userString ? JSON.parse(userString) : null;
+  const [username] = useState(user?.name || 'Student User');
+  const [email] = useState(user?.email || 'student@ecoclub.edu');
   
   const [events] = useState([
     { 
@@ -66,13 +70,27 @@ function UserDashboard() {
     { id: 5, name: 'Eric Tan', points: 490, rank: 5 }
   ]);
 
-  const [notifications] = useState([
-    { id: 1, message: 'New event: Beach Cleanup Drive', time: '2 hours ago' },
-    { id: 2, message: 'You earned 50 eco-points!', time: '5 hours ago' },
-    { id: 3, message: 'Achievement unlocked: Eco Warrior', time: '1 day ago' }
-  ]);
+  const [notifications, setNotifications] = useState([]);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
 
   const totalPoints = 680;
+
+  // Fetch notifications on component mount
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
+
+  const fetchNotifications = async () => {
+    try {
+      setLoadingNotifications(true);
+      const data = await notificationAPI.getAllNotifications();
+      setNotifications(data.notifications || []);
+    } catch (err) {
+      console.error('Error fetching notifications:', err);
+    } finally {
+      setLoadingNotifications(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50">
@@ -323,19 +341,33 @@ function UserDashboard() {
 
         {activeTab === 'notification' && (
           <div className="bg-white rounded-lg shadow-md divide-y">
-            {notifications.map((notif) => (
-              <div key={notif.id} className="p-6 hover:bg-gray-50 transition">
-                <div className="flex items-start space-x-4">
-                  <div className="bg-green-100 p-2 rounded-full">
-                    <Bell className="w-5 h-5 text-green-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-gray-800 font-medium">{notif.message}</p>
-                    <p className="text-gray-500 text-sm mt-1">{notif.time}</p>
+            <div className="p-6">
+              <h3 className="text-2xl font-bold text-gray-800 mb-4">Notifications</h3>
+            </div>
+            {loadingNotifications ? (
+              <div className="p-6 text-center">
+                <p className="text-gray-600">Loading notifications...</p>
+              </div>
+            ) : notifications.length === 0 ? (
+              <div className="p-6 text-center">
+                <p className="text-gray-600">No notifications yet.</p>
+              </div>
+            ) : (
+              notifications.map((notif) => (
+                <div key={notif.id} className="p-6 hover:bg-gray-50 transition">
+                  <div className="flex items-start space-x-4">
+                    <div className="bg-green-100 p-2 rounded-full">
+                      <Bell className="w-5 h-5 text-green-600" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-gray-800 font-bold">{notif.title}</h4>
+                      <p className="text-gray-700 mt-1">{notif.message}</p>
+                      <p className="text-gray-500 text-sm mt-2">{new Date(notif.created_at).toLocaleString()}</p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         )}
 
@@ -351,7 +383,7 @@ function UserDashboard() {
             <div className="space-y-4">
               <div className="border-b pb-4">
                 <p className="text-gray-600 text-sm">Email</p>
-                <p className="text-gray-800 font-medium">sweeney@student.edu</p>
+                <p className="text-gray-800 font-medium">{email}</p>
               </div>
               <div className="border-b pb-4">
                 <p className="text-gray-600 text-sm">Total Eco-Points</p>

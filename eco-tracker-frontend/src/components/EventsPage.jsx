@@ -1,56 +1,70 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { eventAPI } from "../services/api";
 
 function EventsPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('view');
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [joinedEvents, setJoinedEvents] = useState([]);
-  
-  const events = [
-    {
-      id: 1,
-      name: 'Beach Cleanup Drive',
-      details: 'Beach Cleanup Drive - Join us for a community beach cleanup event. Collect trash, earn eco-points, and help protect marine life.',
-      date: 'February 5, 2026',
-      location: 'Sunset Beach',
-      points: 50,
-      participantsNeeded: 30,
-      currentParticipants: 18
-    },
-    {
-      id: 2,
-      name: 'Tree Planting Initiative',
-      details: 'Tree Planting Initiative - Help us plant 100 trees in the local park. Make a lasting impact on our environment.',
-      date: 'February 12, 2026',
-      location: 'Central Park',
-      points: 75,
-      participantsNeeded: 50,
-      currentParticipants: 35
-    },
-    {
-      id: 3,
-      name: 'Recycling Workshop',
-      details: 'Recycling Workshop - Learn about proper recycling techniques and sustainable waste management practices.',
-      date: 'February 20, 2026',
-      location: 'Community Center',
-      points: 30,
-      participantsNeeded: 20,
-      currentParticipants: 12
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Fetch events on component mount
+  useEffect(() => {
+    fetchEvents();
+    fetchRegisteredEvents();
+  }, []);
+
+  const fetchEvents = async () => {
+    try {
+      setLoading(true);
+      // Fetch only approved upcoming events
+      const data = await eventAPI.getAllEvents({ upcoming: true });
+      // Filter to only show upcoming or ongoing approved events (not pending or cancelled)
+      const approvedEvents = data.events.filter(
+        event => event.status === 'upcoming' || event.status === 'ongoing'
+      );
+      setEvents(approvedEvents);
+      setError(null);
+    } catch (err) {
+      setError(err.message);
+      console.error('Error fetching events:', err);
+    } finally {
+      setLoading(false);
     }
-  ];
+  };
+
+  const fetchRegisteredEvents = async () => {
+    try {
+      const data = await eventAPI.getMyRegisteredEvents();
+      setJoinedEvents(data.events || []);
+    } catch (err) {
+      console.error('Error fetching registered events:', err);
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
     alert('Form submitted!');
   };
 
-  const handleJoinEvent = (event) => {
-    if (!joinedEvents.find(e => e.id === event.id)) {
-      setJoinedEvents([...joinedEvents, event]);
-      alert(`You have registered for ${event.name}!`);
-    } else {
-      alert(`You are already registered for ${event.name}!`);
+  const handleJoinEvent = async (event) => {
+    try {
+      const alreadyJoined = joinedEvents.find(e => e.id === event.id);
+      if (alreadyJoined) {
+        alert(`You are already registered for ${event.title}!`);
+        return;
+      }
+
+      await eventAPI.registerForEvent(event.id);
+      alert(`You have successfully registered for ${event.title}!`);
+      
+      // Refresh registered events
+      fetchRegisteredEvents();
+    } catch (err) {
+      alert(`Error registering for event: ${err.message}`);
     }
   };
 
@@ -101,19 +115,27 @@ function EventsPage() {
             <div className="flex gap-6">
               {/* Left Sidebar - Event List */}
               <div className="w-64 bg-green-100 rounded-2xl p-4 space-y-3 max-h-[500px] overflow-y-auto">
-                {events.map((event) => (
-                  <button
-                    key={event.id}
-                    onClick={() => setSelectedEvent(event)}
-                    className={`w-full px-6 py-4 rounded-xl font-semibold transition ${
-                      selectedEvent?.id === event.id
-                        ? 'bg-green-600 text-white'
-                        : 'bg-white text-gray-800 hover:bg-green-50'
-                    }`}
-                  >
-                    {event.name}
-                  </button>
-                ))}
+                {loading ? (
+                  <p className="text-center text-gray-600">Loading...</p>
+                ) : error ? (
+                  <p className="text-center text-red-600">Error: {error}</p>
+                ) : events.length === 0 ? (
+                  <p className="text-center text-gray-600">No events available</p>
+                ) : (
+                  events.map((event) => (
+                    <button
+                      key={event.id}
+                      onClick={() => setSelectedEvent(event)}
+                      className={`w-full px-6 py-4 rounded-xl font-semibold transition ${
+                        selectedEvent?.id === event.id
+                          ? 'bg-green-600 text-white'
+                          : 'bg-white text-gray-800 hover:bg-green-50'
+                      }`}
+                    >
+                      {event.title}
+                    </button>
+                  ))
+                )}
               </div>
 
               {/* Right Panel - Event Details */}
@@ -121,16 +143,18 @@ function EventsPage() {
                 {selectedEvent ? (
                   <div className="flex flex-col h-full">
                     <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">
-                      {selectedEvent.name} Details
+                      {selectedEvent.title} Details
                     </h2>
                     <div className="space-y-4 text-gray-800 flex-1">
-                      <p className="text-lg leading-relaxed">{selectedEvent.details}</p>
+                      <p className="text-lg leading-relaxed">{selectedEvent.description || 'No description available.'}</p>
                       <div className="mt-6 space-y-2">
-                        <p><span className="font-semibold">Date:</span> {selectedEvent.date}</p>
-                        <p><span className="font-semibold">Location:</span> {selectedEvent.location}</p>
-                        <p><span className="font-semibold">Eco-Points:</span> +{selectedEvent.points} points</p>
-                        <p><span className="font-semibold">Participants Needed:</span> {selectedEvent.participantsNeeded}</p>
-                        <p><span className="font-semibold">Available Spots:</span> {selectedEvent.participantsNeeded - selectedEvent.currentParticipants} spots left</p>
+                        <p><span className="font-semibold">Date:</span> {new Date(selectedEvent.event_date).toLocaleDateString()}</p>
+                        <p><span className="font-semibold">Location:</span> {selectedEvent.location || 'N/A'}</p>
+                        <p><span className="font-semibold">Eco-Points:</span> +{selectedEvent.eco_points_reward} points</p>
+                        <p><span className="font-semibold">Current Participants:</span> {selectedEvent.participant_count || 0}</p>
+                        {selectedEvent.max_participants && (
+                          <p><span className="font-semibold">Available Spots:</span> {selectedEvent.spots_available} spots left</p>
+                        )}
                       </div>
                     </div>
                     
@@ -141,14 +165,14 @@ function EventsPage() {
                           state: { 
                             event: {
                               id: selectedEvent.id,
-                              title: selectedEvent.name,
-                              date: selectedEvent.date,
+                              title: selectedEvent.title,
+                              date: new Date(selectedEvent.event_date).toLocaleDateString(),
                               location: selectedEvent.location,
-                              attendees: selectedEvent.currentParticipants,
-                              points: selectedEvent.points,
-                              capacity: selectedEvent.participantsNeeded,
-                              spotsLeft: selectedEvent.participantsNeeded - selectedEvent.currentParticipants,
-                              description: selectedEvent.details
+                              attendees: selectedEvent.participant_count || 0,
+                              points: selectedEvent.eco_points_reward,
+                              capacity: selectedEvent.max_participants,
+                              spotsLeft: selectedEvent.spots_available,
+                              description: selectedEvent.description
                             }
                           } 
                         })}
@@ -170,29 +194,36 @@ function EventsPage() {
           {activeTab === 'register' && (
             <div className="bg-green-50 rounded-2xl p-8 min-h-96">
               <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">Join an Event</h2>
-              <div className="space-y-4 max-w-3xl mx-auto">
-                {events.map((event) => (
-                  <div key={event.id} className="bg-white rounded-xl p-6 shadow-md hover:shadow-lg transition">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <h3 className="text-xl font-bold text-gray-800 mb-2">{event.name}</h3>
-                        <p className="text-gray-600 mb-3">{event.details}</p>
-                        <div className="space-y-1 text-sm text-gray-700">
-                          <p><span className="font-semibold">Date:</span> {event.date}</p>
-                          <p><span className="font-semibold">Location:</span> {event.location}</p>
-                          <p><span className="font-semibold">Eco-Points:</span> +{event.points} points</p>
+              {loading ? (
+                <p className="text-center text-gray-600">Loading events...</p>
+              ) : events.length === 0 ? (
+                <p className="text-center text-gray-600">No events available to join.</p>
+              ) : (
+                <div className="space-y-4 max-w-3xl mx-auto">
+                  {events.map((event) => (
+                    <div key={event.id} className="bg-white rounded-xl p-6 shadow-md hover:shadow-lg transition">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <h3 className="text-xl font-bold text-gray-800 mb-2">{event.title}</h3>
+                          <p className="text-gray-600 mb-3">{event.description || 'No description available.'}</p>
+                          <div className="space-y-1 text-sm text-gray-700">
+                            <p><span className="font-semibold">Date:</span> {new Date(event.event_date).toLocaleDateString()}</p>
+                            <p><span className="font-semibold">Location:</span> {event.location || 'N/A'}</p>
+                            <p><span className="font-semibold">Eco-Points:</span> +{event.eco_points_reward} points</p>
+                            <p><span className="font-semibold">Available Spots:</span> {event.spots_available !== null ? event.spots_available : 'Unlimited'}</p>
+                          </div>
                         </div>
+                        <button
+                          onClick={() => handleJoinEvent(event)}
+                          className="ml-4 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold whitespace-nowrap"
+                        >
+                          Join Event
+                        </button>
                       </div>
-                      <button
-                        onClick={() => handleJoinEvent(event)}
-                        className="ml-4 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold whitespace-nowrap"
-                      >
-                        Join Event
-                      </button>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -207,7 +238,7 @@ function EventsPage() {
                       <option value="">Choose an event...</option>
                       {joinedEvents.map((event) => (
                         <option key={event.id} value={event.id}>
-                          {event.name} - {event.date}
+                          {event.title} - {new Date(event.event_date).toLocaleDateString()}
                         </option>
                       ))}
                     </select>

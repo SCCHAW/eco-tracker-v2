@@ -1,11 +1,29 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Calendar, Bell, User, Leaf, Clock, History } from "lucide-react";
+import { authAPI, notificationAPI } from "../services/api";
 
 function VolunteerDashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('view-events');
-  const [username] = useState('John Volunteer');
+  
+  const userString = localStorage.getItem("user");
+  const user = userString ? JSON.parse(userString) : null;
+  const [username] = useState(user?.name || 'Volunteer User');
+  const [email] = useState(user?.email || 'volunteer@ecoclub.org');
+
+
+  const handleLogout = async ()=> {
+    try {
+      const response = authAPI.logout();
+      console.log('response', response);
+      alert(`Thank you!, ${'Account logged successfully'}!`);
+      navigate('/');
+    } catch (error) {
+      const message = error.message;
+      alert(`Error Please Try Again, ${message}!`);
+    }
+  }
   
   const [upcomingEvents] = useState([
     { id: 1, title: 'Beach Cleanup Drive', date: 'Feb 5, 2026', location: 'Sunset Beach', slots: 20, registered: false },
@@ -19,11 +37,25 @@ function VolunteerDashboard() {
     { id: 3, title: 'River Cleanup', date: 'Dec 20, 2025', hours: 5, status: 'Completed' }
   ]);
 
-  const [notifications] = useState([
-    { id: 1, message: 'Reminder: Tree Planting Event tomorrow at 9 AM', time: '2 hours ago' },
-    { id: 2, message: 'Your volunteer hours have been approved', time: '5 hours ago' },
-    { id: 3, message: 'New event: Beach Cleanup Drive', time: '1 day ago' }
-  ]);
+  const [notifications, setNotifications] = useState([]);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
+
+  // Fetch notifications on component mount
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
+
+  const fetchNotifications = async () => {
+    try {
+      setLoadingNotifications(true);
+      const data = await notificationAPI.getAllNotifications();
+      setNotifications(data.notifications || []);
+    } catch (err) {
+      console.error('Error fetching notifications:', err);
+    } finally {
+      setLoadingNotifications(false);
+    }
+  };
 
   const [volunteerHours, setVolunteerHours] = useState({
     event: '',
@@ -77,10 +109,14 @@ function VolunteerDashboard() {
               <h1 className="text-2xl font-bold text-gray-800">Campus Eco-Club Sustainability Tracker</h1>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-gray-700 font-medium">{username}</span>
+              <span className="text-gray-700 font-medium">{user?.name}</span>
               <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
                 <User className="w-6 h-6 text-white" />
               </div>
+              <button onClick={handleLogout}>
+                <span className="text-gray-700 font-medium">{"Logout"}</span>
+              </button>
+
             </div>
           </div>
         </div>
@@ -339,19 +375,30 @@ function VolunteerDashboard() {
             <div className="p-6">
               <h3 className="text-2xl font-bold text-gray-800 mb-4">Notifications</h3>
             </div>
-            {notifications.map((notif) => (
-              <div key={notif.id} className="p-6 hover:bg-gray-50 transition">
-                <div className="flex items-start space-x-4">
-                  <div className="bg-blue-100 p-2 rounded-full">
-                    <Bell className="w-5 h-5 text-blue-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-gray-800 font-medium">{notif.message}</p>
-                    <p className="text-gray-500 text-sm mt-1">{notif.time}</p>
+            {loadingNotifications ? (
+              <div className="p-6 text-center">
+                <p className="text-gray-600">Loading notifications...</p>
+              </div>
+            ) : notifications.length === 0 ? (
+              <div className="p-6 text-center">
+                <p className="text-gray-600">No notifications yet.</p>
+              </div>
+            ) : (
+              notifications.map((notif) => (
+                <div key={notif.id} className="p-6 hover:bg-gray-50 transition">
+                  <div className="flex items-start space-x-4">
+                    <div className="bg-blue-100 p-2 rounded-full">
+                      <Bell className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-gray-800 font-bold">{notif.title}</h4>
+                      <p className="text-gray-700 mt-1">{notif.message}</p>
+                      <p className="text-gray-500 text-sm mt-2">{new Date(notif.created_at).toLocaleString()}</p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         )}
 

@@ -17,41 +17,62 @@ function EventDetail() {
   const navigate = useNavigate();
   const location = useLocation();
   
-  // Get event data from navigation state or use default
-  const eventData = location.state?.event || {
-    id: 1,
-    title: 'Recycling Awareness Workshop',
-    date: 'July 15, 2026',
-    location: 'MMU Cyberjaya, MPH Hall',
-    attendees: 250
-  };
+  // Get event data from navigation state
+  const eventData = location.state?.event;
 
+  if (!eventData) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-600 mb-4">No event data found</p>
+          <button
+            onClick={() => navigate('/events')}
+            className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
+          >
+            Back to Events
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Map API data to component format
   const [event] = useState({
-    ...eventData,
-    time: '9:00 AM - 4:00 PM',
-    points: 50,
-    description: 'Join us for an exciting workshop focused on raising awareness about recycling and sustainable waste management. Learn practical tips, engage in hands-on activities, and contribute to a greener campus environment.',
-    longDescription: 'This comprehensive workshop will cover various aspects of recycling, including proper waste segregation, understanding recycling symbols, and the environmental impact of different materials. Participants will engage in interactive sessions, group discussions, and practical demonstrations. The event aims to inspire behavioral change and promote sustainable practices within our campus community.',
-    organizer: 'Campus Eco-Club',
-    organizerContact: 'ecoclub@mmu.edu.my',
-    capacity: 300,
-    spotsLeft: 50,
-    category: 'Workshop',
+    id: eventData.id,
+    title: eventData.title,
+    date: eventData.event_date ? new Date(eventData.event_date).toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    }) : 'TBA',
+    location: eventData.location || 'Location TBA',
+    attendees: eventData.participant_count || 0,
+    time: eventData.event_date ? new Date(eventData.event_date).toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit'
+    }) + ' - TBA' : 'Time TBA',
+    points: eventData.eco_points_reward || 10,
+    description: eventData.description || 'No description available.',
+    longDescription: eventData.description || 'No detailed description available for this event.',
+    organizer: eventData.organizer_name || 'Campus Eco-Club',
+    organizerContact: eventData.organizer_email || 'ecoclub@mmu.edu.my',
+    capacity: eventData.max_participants || 0,
+    spotsLeft: eventData.spots_available || (eventData.max_participants - eventData.participant_count) || 0,
+    category: eventData.event_type ? eventData.event_type.charAt(0).toUpperCase() + eventData.event_type.slice(1) : 'Event',
+    status: eventData.status,
     requirements: [
       'Bring your own water bottle',
       'Wear comfortable clothing',
-      'Notebook and pen for activities'
+      'Be on time for the event'
     ],
     agenda: [
-      { time: '9:00 AM - 9:30 AM', activity: 'Registration & Welcome Coffee' },
-      { time: '9:30 AM - 11:00 AM', activity: 'Introduction to Recycling & Waste Management' },
-      { time: '11:00 AM - 11:15 AM', activity: 'Coffee Break' },
-      { time: '11:15 AM - 1:00 PM', activity: 'Hands-on Recycling Activities' },
-      { time: '1:00 PM - 2:00 PM', activity: 'Lunch Break' },
-      { time: '2:00 PM - 3:30 PM', activity: 'Group Projects & Presentations' },
-      { time: '3:30 PM - 4:00 PM', activity: 'Q&A Session & Closing Remarks' }
+      { time: 'Check event details', activity: 'Event timing and agenda will be announced by the organizer' }
     ],
-    tags: ['Recycling', 'Sustainability', 'Education', 'Campus Event'],
+    tags: [
+      eventData.event_type || 'Event',
+      'Sustainability',
+      'Campus Event'
+    ],
     imageUrl: null
   });
 
@@ -87,6 +108,7 @@ function EventDetail() {
   };
 
   const getProgressPercentage = () => {
+    if (!event.capacity || event.capacity === 0) return 0;
     return ((event.capacity - event.spotsLeft) / event.capacity) * 100;
   };
 
@@ -265,18 +287,25 @@ function EventDetail() {
                   <div className="flex justify-between text-sm mb-2">
                     <span className="text-gray-600">Spots Filled</span>
                     <span className="font-semibold text-gray-800">
-                      {event.capacity - event.spotsLeft} / {event.capacity}
+                      {event.capacity > 0 ? `${event.capacity - event.spotsLeft} / ${event.capacity}` : 'Unlimited'}
                     </span>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-green-600 h-2 rounded-full transition-all"
-                      style={{ width: `${getProgressPercentage()}%` }}
-                    ></div>
-                  </div>
-                  <p className="text-sm text-gray-600 mt-2">
-                    {event.spotsLeft} spots remaining
-                  </p>
+                  {event.capacity > 0 && (
+                    <>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-green-600 h-2 rounded-full transition-all"
+                          style={{ width: `${getProgressPercentage()}%` }}
+                        ></div>
+                      </div>
+                      <p className="text-sm text-gray-600 mt-2">
+                        {event.spotsLeft > 0 ? `${event.spotsLeft} spots remaining` : 'Event is full'}
+                      </p>
+                    </>
+                  )}
+                  {event.capacity === 0 && (
+                    <p className="text-sm text-gray-600 mt-2">No capacity limit</p>
+                  )}
                 </div>
 
                 {/* Registration Status */}
@@ -289,16 +318,27 @@ function EventDetail() {
                   </div>
                 )}
 
-                {/* Register Button */}
+                {/* Registration Button */}
                 <button
-                  onClick={handleRegister}
+                  onClick={handleRegistration}
+                  disabled={event.status === 'cancelled' || event.status === 'completed' || (event.spotsLeft === 0 && event.capacity > 0)}
                   className={`w-full py-3 px-4 rounded-lg font-semibold transition ${
-                    isRegistered
+                    event.status === 'cancelled' || event.status === 'completed' || (event.spotsLeft === 0 && event.capacity > 0)
+                      ? 'bg-gray-400 cursor-not-allowed text-white'
+                      : isRegistered
                       ? 'bg-red-600 hover:bg-red-700 text-white'
                       : 'bg-green-600 hover:bg-green-700 text-white'
                   }`}
                 >
-                  {isRegistered ? 'Cancel Registration' : 'Register Now'}
+                  {event.status === 'cancelled' 
+                    ? 'Event Cancelled' 
+                    : event.status === 'completed'
+                    ? 'Event Completed'
+                    : event.spotsLeft === 0 && event.capacity > 0
+                    ? 'Event Full'
+                    : isRegistered 
+                    ? 'Cancel Registration' 
+                    : 'Register Now'}
                 </button>
               </div>
 

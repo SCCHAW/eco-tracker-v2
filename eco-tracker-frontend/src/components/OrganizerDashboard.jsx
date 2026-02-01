@@ -1,50 +1,27 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Calendar, Bell, User, Leaf, Plus, Edit, Send } from "lucide-react";
+import { authAPI, eventAPI, notificationAPI } from "../services/api";
 
 function OrganizerDashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('events');
-  const [username] = useState('Event Organizer1');
   
-  const [events] = useState([
-    { 
-      id: 1, 
-      title: 'Beach Cleanup Drive', 
-      date: 'Feb 5, 2026', 
-      location: 'Sunset Beach',
-      participants: 45,
-      status: 'Upcoming',
-      points: 50 
-    },
-    { 
-      id: 2, 
-      title: 'Tree Planting Event', 
-      date: 'Feb 12, 2026', 
-      location: 'Central Park',
-      participants: 62,
-      status: 'Upcoming',
-      points: 75 
-    },
-    { 
-      id: 3, 
-      title: 'Recycling Workshop', 
-      date: 'Jan 20, 2026', 
-      location: 'Community Center',
-      participants: 38,
-      status: 'Completed',
-      points: 30 
-    }
-  ]);
+  const userString = localStorage.getItem("user");
+  const user = userString ? JSON.parse(userString) : null;
+  const [username] = useState(user?.name || 'Organizer User');
+  const [email] = useState(user?.email || 'organizer@example.com');
+  
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const [notifications] = useState([
-    { id: 1, message: '15 new registrations for Beach Cleanup Drive', time: '1 hour ago' },
-    { id: 2, message: 'Event "Tree Planting" reaches 60 participants', time: '3 hours ago' },
-    { id: 3, message: 'New event approval request pending', time: '1 day ago' }
-  ]);
+  const [notifications, setNotifications] = useState([]);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
 
   const [newEvent, setNewEvent] = useState({
     title: '',
+    event_type: 'cleanup',
     date: '',
     location: '',
     description: '',
@@ -54,8 +31,41 @@ function OrganizerDashboard() {
 
   const [eventNotification, setEventNotification] = useState({
     eventId: '',
+    title: '',
     message: ''
   });
+
+  // Fetch events on component mount
+  useEffect(() => {
+    fetchEvents();
+    fetchNotifications();
+  }, []);
+
+  const fetchEvents = async () => {
+    try {
+      setLoading(true);
+      const data = await eventAPI.getMyOrganizedEvents();
+      setEvents(data.events || []);
+      setError(null);
+    } catch (err) {
+      setError(err.message);
+      console.error('Error fetching events:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchNotifications = async () => {
+    try {
+      setLoadingNotifications(true);
+      const data = await notificationAPI.getAllNotifications();
+      setNotifications(data.notifications || []);
+    } catch (err) {
+      console.error('Error fetching notifications:', err);
+    } finally {
+      setLoadingNotifications(false);
+    }
+  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -65,9 +75,47 @@ function OrganizerDashboard() {
     }));
   };
 
-  const handleCreateEvent = () => {
-    alert(`Event "${newEvent.title}" created successfully!`);
-    setNewEvent({ title: '', date: '', location: '', description: '', points: '', participantsNeeded: '' });
+  const handleCreateEvent = async () => {
+    try {
+      const eventData = {
+        title: newEvent.title,
+        description: newEvent.description,
+        event_type: newEvent.event_type,
+        location: newEvent.location,
+        event_date: newEvent.date,
+        max_participants: parseInt(newEvent.participantsNeeded) || null,
+        eco_points_reward: parseInt(newEvent.points) || 10
+      };
+
+      await eventAPI.createEvent(eventData);
+      alert(`Event "${newEvent.title}" created successfully and is pending admin approval!`);
+      setNewEvent({ 
+        title: '', 
+        event_type: 'cleanup',
+        date: '', 
+        location: '', 
+        description: '', 
+        points: '', 
+        participantsNeeded: '' 
+      });
+      
+      // Refresh events list
+      fetchEvents();
+    } catch (err) {
+      alert(`Error creating event: ${err.message}`);
+    }
+  };
+
+  const handleUpdateEventStatus = async (eventId, newStatus) => {
+    try {
+      await eventAPI.updateEvent(eventId, { status: newStatus });
+      alert('Event status updated successfully!');
+      
+      // Refresh events list
+      fetchEvents();
+    } catch (err) {
+      alert(`Error updating event status: ${err.message}`);
+    }
   };
 
   const handleNotificationChange = (e) => {
@@ -75,15 +123,39 @@ function OrganizerDashboard() {
     setEventNotification(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleSendNotification = () => {
+  const handleSendNotification = async () => {
     const selectedEvent = events.find(e => e.id === parseInt(eventNotification.eventId));
-    if (selectedEvent && eventNotification.message) {
-      alert(`Notification sent to ${selectedEvent.participants} participants of "${selectedEvent.title}"!`);
-      setEventNotification({ eventId: '', message: '' });
-    } else {
-      alert('Please select an event and enter a message.');
+    if (!selectedEvent || !eventNotification.title || !eventNotification.message) {
+      alert('Please select an event, enter a title and message.');
+      return;
+    }
+
+    try {
+      const data = await notificationAPI.sendToEventParticipants(
+        eventNotification.eventId,
+        {
+          title: eventNotification.title,
+          message: eventNotification.message
+        }
+      );
+      alert(`Notification sent to ${data.recipientCount} participant(s) of "${selectedEvent.title}"!`);
+      setEventNotification({ eventId: '', title: '', message: '' });
+    } catch (err) {
+      alert(`Error sending notification: ${err.message}`);
     }
   };
+
+  const handleLogout = async ()=> {
+    try {
+      const response = authAPI.logout();
+      console.log('response', response);
+      alert(`Thank you!, ${'Account logged successfully'}!`);
+      navigate('/');
+    } catch (error) {
+      const message = error.message;
+      alert(`Error Please Try Again, ${message}!`);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50">
@@ -98,10 +170,13 @@ function OrganizerDashboard() {
               <h1 className="text-2xl font-bold text-gray-800">Campus Eco-Club Sustainability Tracker</h1>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-gray-700 font-medium">{username}</span>
+              <span className="text-gray-700 font-medium">{user?.name}</span>
               <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center">
                 <User className="w-6 h-6 text-white" />
               </div>
+              <button onClick={handleLogout}>
+                <span className="text-gray-700 font-medium">{"Logout"}</span>
+              </button>
             </div>
           </div>
         </div>
@@ -200,32 +275,50 @@ function OrganizerDashboard() {
               <h3 className="text-2xl font-bold text-gray-800">All Events</h3>
               <div className="text-sm text-gray-600">Total Events: {events.length}</div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {events.map((event) => (
-                <div key={event.id} className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition">
-                  <div className="flex items-center justify-between mb-4">
-                    <Calendar className="w-8 h-8 text-green-600" />
-                    <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                      event.status === 'Completed' 
-                        ? 'bg-gray-100 text-gray-700' 
-                        : 'bg-green-100 text-green-700'
-                    }`}>
-                      {event.status}
-                    </span>
+            {loading ? (
+              <div className="text-center py-8">
+                <p className="text-gray-600">Loading events...</p>
+              </div>
+            ) : error ? (
+              <div className="text-center py-8">
+                <p className="text-red-600">Error: {error}</p>
+              </div>
+            ) : events.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-gray-600">No events found. Create your first event!</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {events.map((event) => (
+                  <div key={event.id} className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition">
+                    <div className="flex items-center justify-between mb-4">
+                      <Calendar className="w-8 h-8 text-green-600" />
+                      <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                        event.status === 'completed' 
+                          ? 'bg-gray-100 text-gray-700' 
+                          : event.status === 'pending'
+                          ? 'bg-yellow-100 text-yellow-700'
+                          : event.status === 'cancelled'
+                          ? 'bg-red-100 text-red-700'
+                          : 'bg-green-100 text-green-700'
+                      }`}>
+                        {event.status.charAt(0).toUpperCase() + event.status.slice(1)}
+                      </span>
+                    </div>
+                    <h3 className="text-lg font-bold text-gray-800 mb-2">{event.title}</h3>
+                    <div className="space-y-1 text-sm text-gray-600 mb-4">
+                      <p><span className="font-semibold">Date:</span> {new Date(event.event_date).toLocaleDateString()}</p>
+                      <p><span className="font-semibold">Location:</span> {event.location || 'N/A'}</p>
+                      <p><span className="font-semibold">Participants:</span> {event.participant_count || 0}</p>
+                      <p><span className="font-semibold">Points:</span> {event.eco_points_reward}</p>
+                    </div>
+                    <button className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition">
+                      View Details
+                    </button>
                   </div>
-                  <h3 className="text-lg font-bold text-gray-800 mb-2">{event.title}</h3>
-                  <div className="space-y-1 text-sm text-gray-600 mb-4">
-                    <p><span className="font-semibold">Date:</span> {event.date}</p>
-                    <p><span className="font-semibold">Location:</span> {event.location}</p>
-                    <p><span className="font-semibold">Participants:</span> {event.participants}</p>
-                    <p><span className="font-semibold">Points:</span> {event.points}</p>
-                  </div>
-                  <button className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition">
-                    View Details
-                  </button>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -243,6 +336,20 @@ function OrganizerDashboard() {
                   className="w-full px-4 py-3 rounded-lg border-2 border-gray-300 focus:border-green-600 focus:outline-none" 
                   placeholder="Enter event title"
                 />
+              </div>
+              <div>
+                <label className="block text-gray-800 font-semibold mb-2">Event Type</label>
+                <select 
+                  name="event_type"
+                  value={newEvent.event_type}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-3 rounded-lg border-2 border-gray-300 focus:border-green-600 focus:outline-none"
+                >
+                  <option value="cleanup">Cleanup</option>
+                  <option value="awareness">Awareness</option>
+                  <option value="workshop">Workshop</option>
+                  <option value="other">Other</option>
+                </select>
               </div>
               <div>
                 <label className="block text-gray-800 font-semibold mb-2">Event Date</label>
@@ -312,34 +419,54 @@ function OrganizerDashboard() {
           <div className="bg-white rounded-lg shadow-md p-8">
             <h3 className="text-2xl font-bold text-gray-800 mb-6">Update Event Status</h3>
             <div className="space-y-4">
-              {events.map((event) => (
+              {events.filter(event => event.status !== 'pending').map((event) => (
                 <div key={event.id} className="border-b pb-4 last:border-b-0">
                   <div className="flex justify-between items-center mb-3">
                     <div>
                       <h4 className="text-lg font-bold text-gray-800">{event.title}</h4>
-                      <p className="text-sm text-gray-600">{event.date} • {event.location}</p>
+                      <p className="text-sm text-gray-600">
+                        {new Date(event.event_date).toLocaleDateString()} • {event.location || 'N/A'}
+                      </p>
                     </div>
                     <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                      event.status === 'Completed' 
-                        ? 'bg-gray-100 text-gray-700' 
+                      event.status === 'completed' 
+                        ? 'bg-gray-100 text-gray-700'
+                        : event.status === 'cancelled'
+                        ? 'bg-red-100 text-red-700'
+                        : event.status === 'ongoing'
+                        ? 'bg-blue-100 text-blue-700'
                         : 'bg-green-100 text-green-700'
                     }`}>
-                      {event.status}
+                      {event.status.charAt(0).toUpperCase() + event.status.slice(1)}
                     </span>
                   </div>
                   <div className="flex gap-2">
-                    <select className="flex-1 px-4 py-2 rounded-lg border-2 border-gray-300 focus:border-green-600 focus:outline-none">
+                    <select 
+                      id={`status-${event.id}`}
+                      defaultValue={event.status}
+                      className="flex-1 px-4 py-2 rounded-lg border-2 border-gray-300 focus:border-green-600 focus:outline-none"
+                    >
                       <option value="upcoming">Upcoming</option>
                       <option value="ongoing">Ongoing</option>
                       <option value="completed">Completed</option>
                       <option value="cancelled">Cancelled</option>
                     </select>
-                    <button className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold">
+                    <button 
+                      onClick={() => {
+                        const selectElement = document.getElementById(`status-${event.id}`);
+                        const newStatus = selectElement.value;
+                        handleUpdateEventStatus(event.id, newStatus);
+                      }}
+                      className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold"
+                    >
                       Update
                     </button>
                   </div>
                 </div>
               ))}
+              {events.filter(event => event.status !== 'pending').length === 0 && (
+                <p className="text-center text-gray-600 py-4">No approved events to update.</p>
+              )}
             </div>
           </div>
         )}
@@ -349,19 +476,30 @@ function OrganizerDashboard() {
             <div className="p-6">
               <h3 className="text-2xl font-bold text-gray-800 mb-4">Notifications</h3>
             </div>
-            {notifications.map((notif) => (
-              <div key={notif.id} className="p-6 hover:bg-gray-50 transition">
-                <div className="flex items-start space-x-4">
-                  <div className="bg-green-100 p-2 rounded-full">
-                    <Bell className="w-5 h-5 text-green-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-gray-800 font-medium">{notif.message}</p>
-                    <p className="text-gray-500 text-sm mt-1">{notif.time}</p>
+            {loadingNotifications ? (
+              <div className="p-6 text-center">
+                <p className="text-gray-600">Loading notifications...</p>
+              </div>
+            ) : notifications.length === 0 ? (
+              <div className="p-6 text-center">
+                <p className="text-gray-600">No notifications yet.</p>
+              </div>
+            ) : (
+              notifications.map((notif) => (
+                <div key={notif.id} className="p-6 hover:bg-gray-50 transition">
+                  <div className="flex items-start space-x-4">
+                    <div className="bg-green-100 p-2 rounded-full">
+                      <Bell className="w-5 h-5 text-green-600" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-gray-800 font-bold">{notif.title}</h4>
+                      <p className="text-gray-700 mt-1">{notif.message}</p>
+                      <p className="text-gray-500 text-sm mt-2">{new Date(notif.created_at).toLocaleString()}</p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         )}
 
@@ -377,7 +515,7 @@ function OrganizerDashboard() {
             <div className="space-y-4">
               <div className="border-b pb-4">
                 <p className="text-gray-600 text-sm">Email</p>
-                <p className="text-gray-800 font-medium">admin@ecoclub.edu</p>
+                <p className="text-gray-800 font-medium">{email}</p>
               </div>
               <div className="border-b pb-4">
                 <p className="text-gray-600 text-sm">Total Events Organized</p>
@@ -385,7 +523,9 @@ function OrganizerDashboard() {
               </div>
               <div className="border-b pb-4">
                 <p className="text-gray-600 text-sm">Total Participants</p>
-                <p className="text-gray-800 font-medium">{events.reduce((sum, e) => sum + e.participants, 0)} participants</p>
+                <p className="text-gray-800 font-medium">
+                  {events.reduce((sum, e) => sum + (e.participant_count || 0), 0)} participants
+                </p>
               </div>
               <div className="border-b pb-4">
                 <p className="text-gray-600 text-sm">Role</p>
@@ -416,10 +556,21 @@ function OrganizerDashboard() {
                   <option value="">Choose an event...</option>
                   {events.map((event) => (
                     <option key={event.id} value={event.id}>
-                      {event.title} - {event.participants} participants
+                      {event.title} - {event.participant_count || 0} participants
                     </option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label className="block text-gray-800 font-semibold mb-2">Notification Title</label>
+                <input 
+                  type="text"
+                  name="title"
+                  value={eventNotification.title}
+                  onChange={handleNotificationChange}
+                  className="w-full px-4 py-3 rounded-lg border-2 border-gray-300 focus:border-green-600 focus:outline-none"
+                  placeholder="Enter notification title..."
+                />
               </div>
               <div>
                 <label className="block text-gray-800 font-semibold mb-2">Notification Message</label>
@@ -448,8 +599,7 @@ function OrganizerDashboard() {
       <div className="text-center pb-8">
         <button
           onClick={() => navigate("/home")}
-          className="text-gray-600 hover:text-gray-800 text-sm font-medium"
-        >
+          className="text-gray-600 hover:text-gray-800 text-sm font-medium">
           Back to Home
         </button>
       </div>
@@ -457,4 +607,9 @@ function OrganizerDashboard() {
   );
 }
 
-export default OrganizerDashboard;
+export default OrganizerDashboard; 
+
+
+
+
+
