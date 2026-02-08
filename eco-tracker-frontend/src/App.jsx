@@ -12,6 +12,7 @@ import EditProfile from "./components/EditProfile";
 import AdminEditUser from "./components/AdminEditUser";
 import EventDetail from "./components/EventDetail";
 import ProtectedRoute from "./components/helper/protectedRoute";
+import ForgotPassword from "./components/Forgot-password";
 
 function App() {
   return (
@@ -21,6 +22,7 @@ function App() {
         <Route path="/" element={<Welcome />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
 
         {/* All roles (student, volunteer, organizer, admin) */}
         <Route path="/home" element={<ProtectedRoute><Home /></ProtectedRoute>} />
@@ -45,7 +47,7 @@ function App() {
         {/* Student + Volunteer + Organizer (not admin) */}
         <Route path="/edit-profile" element={<ProtectedRoute><EditProfile /></ProtectedRoute>} />
       </Routes>
-    </div>
+    </div> 
   );
 }
 

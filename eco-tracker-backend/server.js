@@ -10,6 +10,11 @@ import notificationRoutes from './routes/notification.js';
 import profileRoutes from './routes/profile.js';
 import ecopointRoutes from './routes/ecopoint.js';
 import recyclingLogRoutes from './routes/recyclingLog.js';
+import admin from './routes/admin.js'
+import reports from './routes/reports.js'
+import path from 'path';
+import system from './routes/system.js'
+import achievements from './routes/achievement.js'
 
 dotenv.config();
 
@@ -19,6 +24,8 @@ const __dirname = dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 5001;
 
+
+
 // CORS
 app.use(cors({
   origin: 'http://localhost:5173',
@@ -26,6 +33,8 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Body parsing
 app.use(express.json());
@@ -45,6 +54,10 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/ecopoints', ecopointRoutes);
 app.use('/api/recycling', recyclingLogRoutes);
+app.use('/api/admin', admin);
+app.use('/api/reports', reports);
+app.use('/api/system', system);
+app.use('/api/achievements', achievements);
 
 // Health check
 app.get('/api/health', (req, res) => {

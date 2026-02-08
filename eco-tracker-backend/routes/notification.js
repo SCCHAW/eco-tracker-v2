@@ -128,6 +128,7 @@ router.post('/event/:eventId', authenticateToken, authorizeRoles('organizer'), (
       }
       
       // Get all participants for this event
+      //those who joined the event later on didnt get the notification : TODO LIST
       const participantsQuery = `
         SELECT DISTINCT user_id
         FROM event_participants

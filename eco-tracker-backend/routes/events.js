@@ -22,7 +22,7 @@ router.get('/', async (req, res) => {
     }
 
     if (upcoming === 'true') {
-      query += ' AND e.event_date >= datetime("now") AND e.status IN ("upcoming", "ongoing")';
+      query += ' AND e.status IN ("upcoming", "ongoing")';
     }
 
     query += ' ORDER BY e.event_date DESC';
@@ -505,22 +505,50 @@ router.patch('/:id/admin-action', authenticateToken, authorizeRoles('admin'), as
 // Get user's registered events
 router.get('/user/registered', authenticateToken, async (req, res) => {
   try {
+    const userId = req.user.id;
+    
+    // Get all registered events with their recycling log status
     const events = await dbAll(
-      `SELECT e.*, u.name as organizer_name, ep.attended, ep.registered_at
+      `SELECT e.*, 
+              u.name as organizer_name, 
+              ep.attended, 
+              ep.registered_at,
+              rl.id as recycling_log_id,
+              rl.verified as log_verified,
+              rl.verified_by,
+              rl.verified_at
        FROM events e
        JOIN event_participants ep ON e.id = ep.event_id
        JOIN users u ON e.organizer_id = u.id
+       LEFT JOIN recycling_logs rl ON e.id = rl.event_id 
+                                   AND rl.user_id = ?
+                                   AND rl.verified = 1
        WHERE ep.user_id = ?
        ORDER BY e.event_date DESC`,
-      [req.user.id]
+      [userId, userId]
     );
 
-    res.json({ events });
+    // Filter out events where user has already submitted AND verified recycling logs
+    const filteredEvents = events.filter(event => {
+      // Keep event in list if:
+      // 1. No recycling log exists for this event (recycling_log_id is null), OR
+      // 2. Recycling log exists but is not yet verified (log_verified is 0 or null)
+      return !event.recycling_log_id || !event.log_verified;
+    });
+
+    // Clean up the response - remove recycling log fields since they're just for filtering
+    const cleanedEvents = filteredEvents.map(event => {
+      const { recycling_log_id, log_verified, verified_by, verified_at, ...eventData } = event;
+      return eventData;
+    });
+
+    res.json({ events: cleanedEvents });
   } catch (error) {
     console.error('User events fetch error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
+
 
 // Get events organized by user (organizers only)
 router.get('/user/organized', authenticateToken, authorizeRoles('organizer', 'admin'), async (req, res) => {

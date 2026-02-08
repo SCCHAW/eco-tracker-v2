@@ -1,33 +1,43 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { eventAPI } from "../services/api";
-import { 
-  ArrowLeft, 
-  Calendar, 
-  MapPin, 
-  Users, 
-  Clock, 
+import {
+  ArrowLeft,
+  Calendar,
+  MapPin,
+  Users,
+  Clock,
   Award,
   Share2,
   Heart,
   CheckCircle,
-  Info
+  Info,
 } from "lucide-react";
 
 function EventDetail() {
   const navigate = useNavigate();
   const location = useLocation();
-  
+  const userString = localStorage.getItem("user");
+  const user = userString ? JSON.parse(userString) : null;
+
   // Get event data from navigation state
   const eventData = location.state?.event;
 
+  // State management
+  const [eventDetails, setEventDetails] = useState(eventData || null);
+  const [isRegistered, setIsRegistered] = useState(false);
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [checkingRegistration, setCheckingRegistration] = useState(true);
+  const [loading, setLoading] = useState(false);
+
+  // Early return if no event data
   if (!eventData) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 flex items-center justify-center">
         <div className="text-center">
           <p className="text-gray-600 mb-4">No event data found</p>
           <button
-            onClick={() => navigate('/events')}
+            onClick={() => navigate("/events")}
             className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
           >
             Back to Events
@@ -37,87 +47,114 @@ function EventDetail() {
     );
   }
 
-  // Map API data to component format
-  const [event] = useState({
-    id: eventData.id,
-    title: eventData.title,
-    date: eventData.event_date ? new Date(eventData.event_date).toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    }) : 'TBA',
-    location: eventData.location || 'Location TBA',
-    attendees: eventData.participant_count || 0,
-    time: eventData.event_time || (eventData.event_date ? new Date(eventData.event_date).toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit'
-    }) + ' - TBA' : 'Time TBA'),
-    points: eventData.eco_points_reward || 10,
-    description: eventData.description || 'No description available.',
-    longDescription: eventData.description || 'No detailed description available for this event.',
-    organizer: eventData.organizer_name || 'Campus Eco-Club',
-    organizerContact: eventData.organizer_email || 'ecoclub@mmu.edu.my',
-    capacity: eventData.max_participants || 0,
-    spotsLeft: eventData.spots_available || (eventData.max_participants - eventData.participant_count) || 0,
-    category: eventData.event_type ? eventData.event_type.charAt(0).toUpperCase() + eventData.event_type.slice(1) : 'Event',
-    status: eventData.status,
-    requirements: eventData.requirements 
-      ? eventData.requirements.split('\n').filter(line => line.trim()).map(line => line.replace(/^[-•*]\s*/, '').trim())
-      : ['Details will be announced by the organizer'],
-    agenda: eventData.agenda
-      ? eventData.agenda.split('\n').filter(line => line.trim()).map(line => {
-          const parts = line.split('-');
-          if (parts.length >= 2) {
-            return { time: parts[0].trim(), activity: parts.slice(1).join('-').trim() };
-          }
-          return { time: 'TBA', activity: line.trim() };
-        })
-      : [{ time: 'Check event details', activity: 'Event timing and agenda will be announced by the organizer' }],
-    tags: [
-      eventData.event_type || 'Event',
-      'Sustainability',
-      'Campus Event'
-    ],
-    imageUrl: null
-  });
+  // Computed values with safe fallbacks
+  const eventId = eventData?.id;
+  const participantCount = eventDetails?.participant_count || 0;
+  const maxParticipants = eventDetails?.max_participants || 0;
+  const spotsLeft =
+    maxParticipants > 0 ? maxParticipants - participantCount : 0;
 
-  const [isRegistered, setIsRegistered] = useState(false);
-  const [isFavorite, setIsFavorite] = useState(false);
-  const [checkingRegistration, setCheckingRegistration] = useState(true);
+  const category = eventData?.event_type
+    ? eventData.event_type.charAt(0).toUpperCase() +
+      eventData.event_type.slice(1)
+    : "Event";
 
-  // Check if user is already registered for this event
-  useEffect(() => {
-    const checkRegistration = async () => {
-      try {
-        const data = await eventAPI.getMyRegisteredEvents();
-        const registered = data.events?.some(e => e.id === event.id);
-        setIsRegistered(registered);
-      } catch (err) {
-        console.error('Error checking registration:', err);
-      } finally {
-        setCheckingRegistration(false);
+  const date = eventData?.event_date
+    ? new Date(eventData.event_date).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })
+    : "TBA";
+
+  const time =
+    eventData?.event_time ||
+    (eventData?.event_date
+      ? new Date(eventData.event_date).toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }) + " - TBA"
+      : "Time TBA");
+
+  const requirements = eventData?.requirements
+    ? eventData.requirements
+        .split("\n")
+        .filter((line) => line.trim())
+        .map((line) => line.replace(/^[-•*]\s*/, "").trim())
+    : ["Details will be announced by the organizer"];
+
+  // Ensure agenda is always an array
+  const agenda = Array.isArray(eventData?.agenda) ? eventData.agenda : [];
+
+  // API calls
+  const checkRegistration = async () => {
+    if (!eventId) {
+      setCheckingRegistration(false);
+      return;
+    }
+
+    try {
+      const data = await eventAPI.getMyRegisteredEvents();
+      const registered = data?.events?.some((e) => e.id === eventId) || false;
+      setIsRegistered(registered);
+    } catch (err) {
+      console.error("Error checking registration:", err);
+    } finally {
+      setCheckingRegistration(false);
+    }
+  };
+
+  const fetchEventDetails = async () => {
+    if (!eventId) return;
+
+    try {
+      setLoading(true);
+      const data = await eventAPI.getEventById(eventId);
+      if (data?.event) {
+        setEventDetails(data.event);
       }
-    };
+    } catch (err) {
+      console.error("Error fetching event details:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    checkRegistration();
-  }, [event.id]);
+  // Effects
+  useEffect(() => {
+    if (eventId) {
+      fetchEventDetails();
+      checkRegistration();
+    }
+  }, [eventId]);
 
+  // Event handlers
   const handleRegister = async () => {
+    if (!eventId) return;
+
     if (isRegistered) {
-      if (window.confirm('Are you sure you want to cancel your registration?')) {
+      if (
+        window.confirm("Are you sure you want to cancel your registration?")
+      ) {
         try {
-          await eventAPI.unregisterFromEvent(event.id);
+          await eventAPI.unregisterFromEvent(eventId);
           setIsRegistered(false);
-          alert('Registration cancelled successfully!');
+          alert("Registration cancelled successfully!");
+          await checkRegistration();
+          await fetchEventDetails();
         } catch (err) {
           alert(`Error cancelling registration: ${err.message}`);
         }
       }
     } else {
       try {
-        await eventAPI.registerForEvent(event.id);
+        await eventAPI.registerForEvent(eventId);
         setIsRegistered(true);
-        alert(`Successfully registered for ${event.title}! You will earn ${event.points} eco-points upon completion.`);
+        alert(
+          `Successfully registered for ${eventData.title}! You will earn ${eventData.eco_points_reward} eco-points upon completion.`
+        );
+        await checkRegistration();
+        await fetchEventDetails();
       } catch (err) {
         alert(`Error registering for event: ${err.message}`);
       }
@@ -130,19 +167,37 @@ function EventDetail() {
 
   const handleShare = () => {
     if (navigator.share) {
-      navigator.share({
-        title: event.title,
-        text: event.description,
-        url: window.location.href,
-      });
+      navigator
+        .share({
+          title: eventData.title,
+          text: eventData.description,
+          url: window.location.href,
+        })
+        .catch((err) => console.log("Error sharing:", err));
     } else {
-      alert('Event link copied to clipboard!');
+      navigator.clipboard.writeText(window.location.href);
+      alert("Event link copied to clipboard!");
     }
   };
 
   const getProgressPercentage = () => {
-    if (!event.capacity || event.capacity === 0) return 0;
-    return ((event.capacity - event.spotsLeft) / event.capacity) * 100;
+    if (maxParticipants === 0 || participantCount === 0) return 0;
+    return (participantCount / maxParticipants) * 100;
+  };
+
+  const isEventDisabled =
+    checkingRegistration ||
+    eventData?.status === "cancelled" ||
+    eventData?.status === "completed" ||
+    (spotsLeft === 0 && maxParticipants > 0 && !isRegistered);
+
+  const getButtonText = () => {
+    if (checkingRegistration) return "Checking...";
+    if (eventData?.status === "cancelled") return "Event Cancelled";
+    if (eventData?.status === "completed") return "Event Completed";
+    if (spotsLeft === 0 && maxParticipants > 0 && !isRegistered)
+      return "Event Full";
+    return isRegistered ? "Cancel Registration" : "Register Now";
   };
 
   return (
@@ -173,10 +228,14 @@ function EventDetail() {
                   <button
                     onClick={handleFavorite}
                     className={`p-3 rounded-full ${
-                      isFavorite ? 'bg-red-500 text-white' : 'bg-white text-gray-600'
+                      isFavorite
+                        ? "bg-red-500 text-white"
+                        : "bg-white text-gray-600"
                     } hover:scale-110 transition`}
                   >
-                    <Heart className={`w-5 h-5 ${isFavorite ? 'fill-current' : ''}`} />
+                    <Heart
+                      className={`w-5 h-5 ${isFavorite ? "fill-current" : ""}`}
+                    />
                   </button>
                   <button
                     onClick={handleShare}
@@ -192,13 +251,13 @@ function EventDetail() {
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <span className="inline-block px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-semibold mb-3">
-                      {event.category}
+                      {category}
                     </span>
                     <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">
-                      {event.title}
+                      {eventData.title}
                     </h1>
                     <p className="text-gray-600 text-lg">
-                      {event.description}
+                      {eventData.description}
                     </p>
                   </div>
                 </div>
@@ -210,7 +269,7 @@ function EventDetail() {
                       <Calendar className="w-5 h-5 mr-2" />
                       <span className="font-semibold text-sm">Date</span>
                     </div>
-                    <p className="text-gray-800 font-medium text-sm">{event.date}</p>
+                    <p className="text-gray-800 font-medium text-sm">{date}</p>
                   </div>
 
                   <div className="bg-blue-50 p-4 rounded-lg">
@@ -218,7 +277,7 @@ function EventDetail() {
                       <Clock className="w-5 h-5 mr-2" />
                       <span className="font-semibold text-sm">Time</span>
                     </div>
-                    <p className="text-gray-800 font-medium text-sm">{event.time}</p>
+                    <p className="text-gray-800 font-medium text-sm">{time}</p>
                   </div>
 
                   <div className="bg-purple-50 p-4 rounded-lg">
@@ -226,7 +285,9 @@ function EventDetail() {
                       <MapPin className="w-5 h-5 mr-2" />
                       <span className="font-semibold text-sm">Location</span>
                     </div>
-                    <p className="text-gray-800 font-medium text-sm">{event.location}</p>
+                    <p className="text-gray-800 font-medium text-sm">
+                      {eventData.location || "TBA"}
+                    </p>
                   </div>
 
                   <div className="bg-yellow-50 p-4 rounded-lg">
@@ -234,7 +295,9 @@ function EventDetail() {
                       <Award className="w-5 h-5 mr-2" />
                       <span className="font-semibold text-sm">Points</span>
                     </div>
-                    <p className="text-gray-800 font-medium text-sm">{event.points} eco-points</p>
+                    <p className="text-gray-800 font-medium text-sm">
+                      {eventData.eco_points_reward || 0} eco-points
+                    </p>
                   </div>
                 </div>
               </div>
@@ -247,21 +310,18 @@ function EventDetail() {
                 About This Event
               </h2>
               <p className="text-gray-700 leading-relaxed whitespace-pre-line">
-                {event.longDescription}
+                {eventData.description}
               </p>
 
               {/* Tags */}
               <div className="mt-6">
                 <h3 className="font-semibold text-gray-800 mb-3">Topics</h3>
                 <div className="flex flex-wrap gap-2">
-                  {event.tags.map((tag, index) => (
-                    <span
-                      key={index}
-                      className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm"
-                    >
-                      #{tag}
+                  {eventData.event_type && (
+                    <span className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm">
+                      #{eventData.event_type}
                     </span>
-                  ))}
+                  )}
                 </div>
               </div>
             </div>
@@ -272,7 +332,7 @@ function EventDetail() {
                 What to Bring
               </h2>
               <ul className="space-y-3">
-                {event.requirements.map((req, index) => (
+                {requirements.map((req, index) => (
                   <li key={index} className="flex items-start">
                     <CheckCircle className="w-5 h-5 text-green-600 mr-3 mt-0.5 flex-shrink-0" />
                     <span className="text-gray-700">{req}</span>
@@ -281,29 +341,33 @@ function EventDetail() {
               </ul>
             </div>
 
-            {/* Event Agenda */}
-            <div className="bg-white rounded-xl shadow-lg p-6 md:p-8">
-              <h2 className="text-2xl font-bold text-gray-900 mb-4">
-                Event Agenda
-              </h2>
-              <div className="space-y-4">
-                {event.agenda.map((item, index) => (
-                  <div
-                    key={index}
-                    className="flex items-start border-l-4 border-green-500 pl-4 py-2"
-                  >
-                    <div className="flex-shrink-0 w-32 md:w-40">
-                      <span className="text-green-600 font-semibold text-sm">
-                        {item.time}
-                      </span>
+            {/* Event Agenda - Only show if agenda exists */}
+            {agenda.length > 0 && (
+              <div className="bg-white rounded-xl shadow-lg p-6 md:p-8">
+                <h2 className="text-2xl font-bold text-gray-900 mb-4">
+                  Event Agenda
+                </h2>
+                <div className="space-y-4">
+                  {agenda.map((item, index) => (
+                    <div
+                      key={index}
+                      className="flex items-start border-l-4 border-green-500 pl-4 py-2"
+                    >
+                      <div className="flex-shrink-0 w-32 md:w-40">
+                        <span className="text-green-600 font-semibold text-sm">
+                          {item.time}
+                        </span>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-gray-800 font-medium">
+                          {item.activity}
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex-1">
-                      <p className="text-gray-800 font-medium">{item.activity}</p>
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Sidebar */}
@@ -314,16 +378,18 @@ function EventDetail() {
                 <h3 className="text-xl font-bold text-gray-900 mb-4">
                   Registration
                 </h3>
-                
+
                 {/* Capacity Progress */}
                 <div className="mb-4">
                   <div className="flex justify-between text-sm mb-2">
                     <span className="text-gray-600">Spots Filled</span>
                     <span className="font-semibold text-gray-800">
-                      {event.capacity > 0 ? `${event.capacity - event.spotsLeft} / ${event.capacity}` : 'Unlimited'}
+                      {maxParticipants > 0
+                        ? `${participantCount} / ${maxParticipants}`
+                        : "Unlimited"}
                     </span>
                   </div>
-                  {event.capacity > 0 && (
+                  {maxParticipants > 0 && (
                     <>
                       <div className="w-full bg-gray-200 rounded-full h-2">
                         <div
@@ -332,12 +398,16 @@ function EventDetail() {
                         ></div>
                       </div>
                       <p className="text-sm text-gray-600 mt-2">
-                        {event.spotsLeft > 0 ? `${event.spotsLeft} spots remaining` : 'Event is full'}
+                        {spotsLeft > 0
+                          ? `${spotsLeft} spots remaining`
+                          : "Event is full"}
                       </p>
                     </>
                   )}
-                  {event.capacity === 0 && (
-                    <p className="text-sm text-gray-600 mt-2">No capacity limit</p>
+                  {maxParticipants === 0 && (
+                    <p className="text-sm text-gray-600 mt-2">
+                      No capacity limit
+                    </p>
                   )}
                 </div>
 
@@ -352,29 +422,21 @@ function EventDetail() {
                 )}
 
                 {/* Registration Button */}
-                <button
-                  onClick={handleRegister}
-                  disabled={checkingRegistration || event.status === 'cancelled' || event.status === 'completed' || (event.spotsLeft === 0 && event.capacity > 0 && !isRegistered)}
-                  className={`w-full py-3 px-4 rounded-lg font-semibold transition ${
-                    checkingRegistration || event.status === 'cancelled' || event.status === 'completed' || (event.spotsLeft === 0 && event.capacity > 0 && !isRegistered)
-                      ? 'bg-gray-400 cursor-not-allowed text-white'
-                      : isRegistered
-                      ? 'bg-red-600 hover:bg-red-700 text-white'
-                      : 'bg-green-600 hover:bg-green-700 text-white'
-                  }`}
-                >
-                  {checkingRegistration
-                    ? 'Checking...'
-                    : event.status === 'cancelled' 
-                    ? 'Event Cancelled' 
-                    : event.status === 'completed'
-                    ? 'Event Completed'
-                    : event.spotsLeft === 0 && event.capacity > 0 && !isRegistered
-                    ? 'Event Full'
-                    : isRegistered 
-                    ? 'Cancel Registration' 
-                    : 'Register Now'}
-                </button>
+                {user?.role === "admin" || user?.role === "organizer" ? null : (
+                  <button
+                    onClick={handleRegister}
+                    disabled={isEventDisabled}
+                    className={`w-full py-3 px-4 rounded-lg font-semibold transition ${
+                      isEventDisabled
+                        ? "bg-gray-400 cursor-not-allowed text-white"
+                        : isRegistered
+                        ? "bg-red-600 hover:bg-red-700 text-white"
+                        : "bg-green-600 hover:bg-green-700 text-white"
+                    }`}
+                  >
+                    {getButtonText()}
+                  </button>
+                )}
               </div>
 
               {/* Organizer Info */}
@@ -385,17 +447,21 @@ function EventDetail() {
                 <div className="space-y-3">
                   <div>
                     <p className="text-sm text-gray-600">Organized by</p>
-                    <p className="text-gray-900 font-semibold">{event.organizer}</p>
+                    <p className="text-gray-900 font-semibold">
+                      {eventData.organizer_name || "TBA"}
+                    </p>
                   </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Contact</p>
-                    <a
-                      href={`mailto:${event.organizerContact}`}
-                      className="text-green-600 hover:text-green-700 font-medium"
-                    >
-                      {event.organizerContact}
-                    </a>
-                  </div>
+                  {eventData.organizer_email && (
+                    <div>
+                      <p className="text-sm text-gray-600">Contact</p>
+                      <a
+                        href={`mailto:${eventData.organizer_email}`}
+                        className="text-green-600 hover:text-green-700 font-medium"
+                      >
+                        {eventData.organizer_email}
+                      </a>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -406,7 +472,10 @@ function EventDetail() {
                   Attendees
                 </h3>
                 <p className="text-gray-700 mb-3">
-                  <span className="text-2xl font-bold text-green-600">{event.attendees}</span> people are attending
+                  <span className="text-2xl font-bold text-green-600">
+                    {participantCount}
+                  </span>{" "}
+                  people are attending
                 </p>
                 <p className="text-sm text-gray-600">
                   Join this amazing community of eco-conscious individuals!

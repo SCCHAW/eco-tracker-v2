@@ -117,4 +117,85 @@ router.post("/login", async (req, res) => {
   }
 });
 
+
+// Forgot Password / Reset Password Route
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { email, password, confirmPassword } = req.body;
+
+    // Validate required fields
+    if (!email || !password || !confirmPassword) {
+      return res.status(400).json({
+        error: "All fields are required",
+        details: "Please provide email, password, and confirm password.",
+      });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        error: "Invalid email format",
+        details: "Please enter a valid email address.",
+      });
+    }
+
+    // Validate password length
+    if (password.length < 6) {
+      return res.status(400).json({
+        error: "Password too short",
+        details: "Password must be at least 6 characters long.",
+      });
+    }
+
+    // Validate passwords match
+    if (password !== confirmPassword) {
+      return res.status(400).json({
+        error: "Passwords do not match",
+        details: "Password and confirm password must be the same.",
+      });
+    }
+
+    // Check if user exists
+    const user = await dbGet(
+      "SELECT id, name, email, role FROM users WHERE email = ?",
+      [email.toLowerCase().trim()]
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        error: "User not found",
+        details: "No account exists with this email address.",
+      });
+    }
+
+    // Hash the new password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Update the password in database
+    await dbRun(
+      "UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [hashedPassword, user.id]
+    );
+
+    console.log(`Password reset successful for user: ${user.email}`);
+
+    res.json({
+      message: "Password reset successfully",
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    console.error("Password reset error:", error);
+    res.status(500).json({
+      error: "Server error",
+      details: "An error occurred while resetting your password.",
+    });
+  }
+});
+
 export default router;

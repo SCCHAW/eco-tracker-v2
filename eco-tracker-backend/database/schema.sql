@@ -49,10 +49,12 @@ CREATE TABLE IF NOT EXISTS recycling_logs (
     weight REAL NOT NULL,
     image_url TEXT,
     description TEXT,
+    volunteer_hours REAL DEFAULT 0,
     eco_points_earned INTEGER DEFAULT 0,
     verified BOOLEAN DEFAULT 0,
     verified_by INTEGER,
     verified_at DATETIME,
+    event_id INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (verified_by) REFERENCES users(id)
@@ -105,6 +107,29 @@ CREATE TABLE IF NOT EXISTS event_announcements (
     FOREIGN KEY (created_by) REFERENCES users(id)
 );
 
+
+CREATE TABLE IF NOT EXISTS user_profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER UNIQUE NOT NULL,
+    phone_number TEXT,
+    address TEXT,
+    student_id TEXT UNIQUE,
+    major_program TEXT,
+    year INTEGER,
+    interests TEXT,
+    bio TEXT,
+    emergency_contact_name TEXT,
+    emergency_contact_phone TEXT,
+    profile_picture_url TEXT,
+    emergency_contact_relationship TEXT,
+    organization TEXT,
+    position TEXT,
+    department TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 -- Insert default achievements
 INSERT OR IGNORE INTO achievements (id, name, description, icon, requirement_type, requirement_value, eco_points_reward) VALUES
 (1, 'First Steps', 'Register for your first event', '🌱', 'events', 1, 5),
@@ -112,3 +137,36 @@ INSERT OR IGNORE INTO achievements (id, name, description, icon, requirement_typ
 (3, 'Recycling Novice', 'Log 10kg of recycling', '♻️', 'recycling', 10, 15),
 (4, 'Point Collector', 'Earn 100 eco points', '⭐', 'points', 100, 20),
 (5, 'Sustainability Champion', 'Attend 10 events', '🏆', 'events', 10, 50);
+
+
+-- ========================================
+-- DATABASE MIGRATION - System Settings Table
+-- ========================================
+-- Run this SQL in your SQLite database
+
+CREATE TABLE IF NOT EXISTS system_settings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    setting_key TEXT UNIQUE NOT NULL,
+    setting_value TEXT NOT NULL,
+    description TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_by INTEGER,
+    FOREIGN KEY (updated_by) REFERENCES users(id)
+);
+
+-- Insert default settings
+INSERT OR IGNORE INTO system_settings (setting_key, setting_value, description) VALUES
+('auto_approve_logs', 'false', 'Automatically approve recycling logs without admin review'),
+('maintenance_mode', 'false', 'Enable maintenance mode to restrict user access'),
+('last_backup', '', 'Timestamp of last database backup'),
+('backup_enabled', 'true', 'Enable automatic database backups');
+
+-- Create system_logs table for tracking system actions
+CREATE TABLE IF NOT EXISTS system_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action TEXT NOT NULL,
+    performed_by INTEGER NOT NULL,
+    details TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (performed_by) REFERENCES users(id)
+);

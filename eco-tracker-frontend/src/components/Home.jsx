@@ -32,6 +32,7 @@ function Home() {
         setLoading(true);
         // Fetch only upcoming approved events
         const response = await eventAPI.getAllEvents({ upcoming: true });
+        console.log('response event---', response)
         setEvents(response.events || []);
       } catch (error) {
         console.error('Failed to fetch events:', error);
